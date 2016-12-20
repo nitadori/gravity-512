@@ -84,15 +84,15 @@ void gravity_avx512(
 			r2 = _mm512_fmadd_ps(dy, dy, r2);
 			r2 = _mm512_fmadd_ps(dz, dz, r2);
 
-			__m512 ri = _mm512_rsqrt14_ps(r2);
+			__m512 ri = _mm512_rsqrt28_ps(r2);
 
 			__m512 mri  = _mm512_mul_ps(ri, _mm512_set1_ps(posm[j].m));
 			__m512 ri2  = _mm512_mul_ps(ri, ri);
 			__m512 mri3 = _mm512_mul_ps(mri, ri2);
 
-			ax = _mm512_fnmsub_ps(mri3, dx, ax);
-			ay = _mm512_fnmsub_ps(mri3, dy, ay);
-			az = _mm512_fnmsub_ps(mri3, dz, az);
+			ax = _mm512_fnmadd_ps(mri3, dx, ax);
+			ay = _mm512_fnmadd_ps(mri3, dy, ay);
+			az = _mm512_fnmadd_ps(mri3, dz, az);
 		}
 
 		_mm512_i32scatter_ps(&accp[i].ax, vindex, ax, 4);
@@ -125,7 +125,7 @@ int main(){
 	// dry run;
 	const float eps = 1./256.;
 	{
-		gravity_avx512(N, eps*eps, posm, accp);
+		gravity_simple(N, eps*eps, posm, accp);
 	}
 
 	const double t0 = omp_get_wtime();
