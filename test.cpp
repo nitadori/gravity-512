@@ -55,6 +55,52 @@ void gravity_simple(
 	}
 }
 
+void gravity_avx512(
+		const int N,
+		const float seps2,
+		const PosM * __restrict posm,
+		AccP * __restrict accp)
+{
+#pragma omp parallel for
+	for(int i=0; i<N; i+=16){
+		__m512 ax = _mm512_set1_ps(0.0f);
+		__m512 ay = _mm512_set1_ps(0.0f);
+		__m512 az = _mm512_set1_ps(0.0f);
+
+		__m512i vindex = _mm512_set_epi32(
+				60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0);
+		__m512 xi = _mm512_i32gather_ps(vindex, &posm[i].x, 4);
+		__m512 yi = _mm512_i32gather_ps(vindex, &posm[i].y, 4);
+		__m512 zi = _mm512_i32gather_ps(vindex, &posm[i].z, 4);
+
+		__m512 eps2 = _mm512_set1_ps(seps2);
+
+		for(int j=0; j<N; j++){
+			__m512 dx = _mm512_sub_ps(xi, _mm512_set1_ps(posm[j].x));
+			__m512 dy = _mm512_sub_ps(yi, _mm512_set1_ps(posm[j].y));
+			__m512 dz = _mm512_sub_ps(zi, _mm512_set1_ps(posm[j].z));
+
+			__m512 r2 = _mm512_fmadd_ps(dx, dx, eps2);
+			r2 = _mm512_fmadd_ps(dy, dy, r2);
+			r2 = _mm512_fmadd_ps(dz, dz, r2);
+
+			__m512 ri = _mm512_rsqrt14_ps(r2);
+
+			__m512 mri  = _mm512_mul_ps(ri, _mm512_set1_ps(posm[j].m));
+			__m512 ri2  = _mm512_mul_ps(ri, ri);
+			__m512 mri3 = _mm512_mul_ps(mri, ri2);
+
+			ax = _mm512_fnmsub_ps(mri3, dx, ax);
+			ay = _mm512_fnmsub_ps(mri3, dy, ay);
+			az = _mm512_fnmsub_ps(mri3, dz, az);
+		}
+
+		_mm512_i32scatter_ps(&accp[i].ax, vindex, ax, 4);
+		_mm512_i32scatter_ps(&accp[i].ay, vindex, ay, 4);
+		_mm512_i32scatter_ps(&accp[i].az, vindex, az, 4);
+	}
+}
+
 int main(){
 	enum{
 		N = 16 * 1024,
@@ -76,10 +122,15 @@ int main(){
 	{
 		// dry run;
 	}
-
+	// dry run;
 	const float eps = 1./256.;
+	{
+		gravity_avx512(N, eps*eps, posm, accp);
+	}
+
 	const double t0 = omp_get_wtime();
-	gravity_simple(N, eps*eps, posm, accp);
+	// gravity_simple(N, eps*eps, posm, accp);
+	gravity_avx512(N, eps*eps, posm, accp);
 	const double t1 = omp_get_wtime();
 
 	{
