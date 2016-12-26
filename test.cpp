@@ -75,7 +75,10 @@ void gravity_avx512(
 
 		__m512 eps2 = _mm512_set1_ps(seps2);
 
+#if 1
 		for(int j=0; j<N; j++){
+			// _mm_prefetch((const char *)&posm[j+1], _MM_HINT_T0);
+
 			__m512 dx = _mm512_sub_ps(xi, _mm512_set1_ps(posm[j].x));
 			__m512 dy = _mm512_sub_ps(yi, _mm512_set1_ps(posm[j].y));
 			__m512 dz = _mm512_sub_ps(zi, _mm512_set1_ps(posm[j].z));
@@ -94,6 +97,72 @@ void gravity_avx512(
 			ay = _mm512_fnmadd_ps(mri3, dy, ay);
 			az = _mm512_fnmadd_ps(mri3, dz, az);
 		}
+#else
+		for(const PosM *p = posm; p<posm+N; p++){
+			// _mm_prefetch((const char *)&posm[j+1], _MM_HINT_T0);
+
+			__m512 dx = _mm512_sub_ps(xi, _mm512_set1_ps(p->x));
+			__m512 dy = _mm512_sub_ps(yi, _mm512_set1_ps(p->y));
+			__m512 dz = _mm512_sub_ps(zi, _mm512_set1_ps(p->z));
+
+			__m512 r2 = _mm512_fmadd_ps(dx, dx, eps2);
+			r2 = _mm512_fmadd_ps(dy, dy, r2);
+			r2 = _mm512_fmadd_ps(dz, dz, r2);
+
+			__m512 ri = _mm512_rsqrt28_ps(r2);
+
+			__m512 mri  = _mm512_mul_ps(ri, _mm512_set1_ps(p->m));
+			__m512 ri2  = _mm512_mul_ps(ri, ri);
+			__m512 mri3 = _mm512_mul_ps(mri, ri2);
+
+			ax = _mm512_fnmadd_ps(mri3, dx, ax);
+			ay = _mm512_fnmadd_ps(mri3, dy, ay);
+			az = _mm512_fnmadd_ps(mri3, dz, az);
+		}
+#endif
+#if 0
+		for(int j=0; j<N; j+=2){
+			__m512 dx, dy, dz, r2, ri, mri, ri2, mri3;
+
+			// first iter
+			dx = _mm512_sub_ps(xi, _mm512_set1_ps(posm[j].x));
+			dy = _mm512_sub_ps(yi, _mm512_set1_ps(posm[j].y));
+			dz = _mm512_sub_ps(zi, _mm512_set1_ps(posm[j].z));
+
+			r2 = _mm512_fmadd_ps(dx, dx, eps2);
+			r2 = _mm512_fmadd_ps(dy, dy, r2);
+			r2 = _mm512_fmadd_ps(dz, dz, r2);
+
+			ri = _mm512_rsqrt28_ps(r2);
+
+			mri  = _mm512_mul_ps(ri, _mm512_set1_ps(posm[j].m));
+			ri2  = _mm512_mul_ps(ri, ri);
+			mri3 = _mm512_mul_ps(mri, ri2);
+
+			ax = _mm512_fnmadd_ps(mri3, dx, ax);
+			ay = _mm512_fnmadd_ps(mri3, dy, ay);
+			az = _mm512_fnmadd_ps(mri3, dz, az);
+
+			// next iter
+			dx = _mm512_sub_ps(xi, _mm512_set1_ps(posm[j+1].x));
+			dy = _mm512_sub_ps(yi, _mm512_set1_ps(posm[j+1].y));
+			dz = _mm512_sub_ps(zi, _mm512_set1_ps(posm[j+1].z));
+
+			r2 = _mm512_fmadd_ps(dx, dx, eps2);
+			r2 = _mm512_fmadd_ps(dy, dy, r2);
+			r2 = _mm512_fmadd_ps(dz, dz, r2);
+
+			ri = _mm512_rsqrt28_ps(r2);
+
+			mri  = _mm512_mul_ps(ri, _mm512_set1_ps(posm[j+1].m));
+			ri2  = _mm512_mul_ps(ri, ri);
+			mri3 = _mm512_mul_ps(mri, ri2);
+
+			ax = _mm512_fnmadd_ps(mri3, dx, ax);
+			ay = _mm512_fnmadd_ps(mri3, dy, ay);
+			az = _mm512_fnmadd_ps(mri3, dz, az);
+		}
+#endif
 
 		_mm512_i32scatter_ps(&accp[i].ax, vindex, ax, 4);
 		_mm512_i32scatter_ps(&accp[i].ay, vindex, ay, 4);
@@ -136,7 +205,9 @@ int main(){
 	{
 		double nintr = N/(t1-t0) * N;
 		double gflops = 38.e-9 * nintr;
-		printf("%e intr/s, %f Gflops\n", nintr, gflops);
+		double loop_sec = 16.0e9/nintr;
+		printf("%e intr/s, %f Gflops, %f nsec/loop\n", 
+				nintr, gflops, loop_sec);
 	}
 
 	double fx=0.0, fy=0.0, fz=0.0;
